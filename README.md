@@ -35,8 +35,18 @@ Ubuntu 16.04, Python 2.7
 numpy(1.12.1), cv2(2.4.9), PIL(4.3), matplotlib(2.1.0), cython(0.26.1), easydict
 
 ## Preparation for Training
+1. Clone the repository.
+```
+git clone --recursive https://github.com/TuSimple/mx-maskrcnn.git
+```
 
-1. Download Cityscapes data (gtFine_trainvaltest.zip, leftImg8bit_trainvaltest.zip). Extract them into 'data/cityscape/'.
+2. Build MXNet with ROIAlign operator.
+
+```
+bash scripts/build_mxnet.sh
+```
+
+3. Download Cityscapes data (gtFine_trainvaltest.zip, leftImg8bit_trainvaltest.zip). Extract them into 'data/cityscape/'.
  The folder then look like below:
 
 ```
@@ -55,22 +65,13 @@ data/cityscape/
     └── test.lst
 ```
 
-
-2. Download Resnet-50 pretrained model.
+4. Download Resnet-50 pretrained model.
 ```
 bash scripts/download_res50.sh
 
 ```
 
-3. Build MXNet with ROIAlign operator.
-
-```
-cp rcnn/CXX_OP/* incubator-mxnet/src/operator/
-```
-
-To build MXNet from source, please refer to the [tutorial](https://mxnet.incubator.apache.org/get_started/build_from_source.html).
-
-4. Build related cython code.
+5. Build related cython code.
 
 ```
 make
