@@ -22,6 +22,7 @@ config.ANCHOR_SCALES = (8,)
 config.ANCHOR_RATIOS = (0.5, 1, 2)
 config.NUM_ANCHORS = len(config.ANCHOR_SCALES) * len(config.ANCHOR_RATIOS)
 config.CLASS_ID = [0, 24, 25, 26, 27, 28, 31, 32, 33]
+config.SEG_CODE = 1000
 
 config.TRAIN = edict()
 
@@ -159,6 +160,23 @@ dataset.Cityscape.ANCHOR_SCALES = (8,)
 dataset.Cityscape.ANCHOR_RATIOS = (0.5, 1, 2)
 dataset.Cityscape.NUM_ANCHORS = len(dataset.Cityscape.ANCHOR_SCALES) * len(dataset.Cityscape.ANCHOR_RATIOS)
 dataset.Cityscape.CLASS_ID = [0, 24, 25, 26, 27, 28, 31, 32, 33]
+dataset.Cityscape.SEG_CODE = 1000
+
+dataset.coco = edict()
+dataset.coco.image_set = 'train2014'
+dataset.coco.test_image_set = 'val2014'
+dataset.coco.root_path = 'data'
+dataset.coco.dataset_path = 'data/coco'
+dataset.coco.NUM_CLASSES = 81
+dataset.coco.SCALES = [(800, 1000)]
+dataset.coco.ANCHOR_SCALES = (8,)
+dataset.coco.ANCHOR_RATIOS = (0.5, 1, 2)
+dataset.coco.NUM_ANCHORS = len(dataset.Cityscape.ANCHOR_SCALES) * len(dataset.Cityscape.ANCHOR_RATIOS)
+dataset.coco.CLASS_ID = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27,
+                         28, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 47, 48, 49, 50, 51, 52, 53, 54,
+                         55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 67, 70, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82,
+                         84, 85, 86, 87, 88, 89, 90]
+dataset.coco.SEG_CODE = 500
 
 def generate_config(_network, _dataset):
     for k, v in network[_network].items():

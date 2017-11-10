@@ -1,7 +1,6 @@
 """
 This script convert coco mask label to cityscape's format.
 """
-
 from rcnn.pycocotools.coco import COCO
 import numpy as np
 import os
@@ -44,7 +43,7 @@ for dataType in dataTypes:
             if ann['area'] > 0 and x2 >= x1 and y2 >= y1:
                 m = coco.annToMask(ann)
                 cat_id = ann['category_id']
-                mask[m > 0] = cat_id * 1000 + ins_id
+                mask[m > 0] = cat_id * 500 + ins_id
                 ins_id += 1
         ins_seg_im = Image.fromarray(mask)
         ins_seg_im.save(os.path.join(insSegDir, filename.replace('jpg', 'png')))
