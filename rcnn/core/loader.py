@@ -1,12 +1,12 @@
 import mxnet as mx
 import numpy as np
 from mxnet.executor_manager import _split_input_slice
+import multiprocessing as mp
 
 from rcnn.config import config
 from rcnn.io.image import tensor_vstack
 from rcnn.io.rpn import get_rpn_testbatch, get_rpn_batch, assign_anchor_fpn
 from rcnn.io.rcnn import get_rcnn_testbatch, get_fpn_rcnn_testbatch, get_fpn_maskrcnn_batch
-
 
 class TestLoader(mx.io.DataIter):
     def __init__(self, roidb, batch_size=1, shuffle=False,
@@ -246,98 +246,16 @@ class MaskROIIter(mx.io.DataIter):
                 ex = num_imgs - rois_num_on_levels['stride%s' % s] % num_imgs
                 rois_num_on_levels['stride%s' % s] += ex
 
-        for im_array, data_on_imgs in zip(im_array_list, levels_data_list):
-            num_imgs = len(data_on_imgs)
-            for s in config.RCNN_FEAT_STRIDE:
-                bucket_size = rois_num_on_levels['stride%s' % s]
-                for im_i in range(num_imgs):
-                    _rois = data_on_imgs['img_%s' % im_i]['rois_on_levels']['stride%s' % s]
-                    _labels = data_on_imgs['img_%s' % im_i]['labels_on_levels']['stride%s' % s]
-                    _bbox_targets = data_on_imgs['img_%s' % im_i]['bbox_targets_on_levels']['stride%s' % s]
-                    _bbox_weights = data_on_imgs['img_%s' % im_i]['bbox_weights_on_levels']['stride%s' % s]
-                    _mask_targets = data_on_imgs['img_%s' % im_i]['mask_targets_on_levels']['stride%s' % s]
-                    _mask_weights = data_on_imgs['img_%s' % im_i]['mask_weights_on_levels']['stride%s' % s]
-                    rois_num = _rois.shape[0]
-                    if rois_num < bucket_size:
-                        num_pad = bucket_size - rois_num
+        pool = mp.Pool(processes=len(im_array_list))
 
-                        rois_pad = np.array([[12, 34, 56, 78]] * num_pad)
-                        labels_pad = np.array([-1] * num_pad)
-                        bbox_targets_pad = np.array([[1, 2, 3, 4] * config.NUM_CLASSES] * num_pad)
-                        bbox_weights_pad = np.array([[0, 0, 0, 0] * config.NUM_CLASSES] * num_pad)
-                        mask_targets_pad = np.zeros((num_pad, config.NUM_CLASSES, 28, 28),
-                                                    dtype=np.int8)
-                        mask_weights_pad = np.zeros((num_pad, config.NUM_CLASSES, 1, 1), dtype=np.int8)
+        feed_data = [(im_array, data_on_imgs, rois_num_on_levels)
+                     for im_array, data_on_imgs in zip(im_array_list, levels_data_list)]
 
-                        data_on_imgs['img_%s' % im_i]['rois_on_levels']['stride%s' % s] = np.concatenate(
-                            [_rois, rois_pad])
-                        data_on_imgs['img_%s' % im_i]['labels_on_levels']['stride%s' % s] = np.concatenate(
-                            [_labels, labels_pad])
-                        data_on_imgs['img_%s' % im_i]['bbox_targets_on_levels']['stride%s' % s] = np.concatenate(
-                            [_bbox_targets, bbox_targets_pad])
-                        data_on_imgs['img_%s' % im_i]['bbox_weights_on_levels']['stride%s' % s] = np.concatenate(
-                            [_bbox_weights, bbox_weights_pad])
-                        data_on_imgs['img_%s' % im_i]['mask_targets_on_levels']['stride%s' % s] = np.concatenate(
-                            [_mask_targets, mask_targets_pad])
-                        data_on_imgs['img_%s' % im_i]['mask_weights_on_levels']['stride%s' % s] = np.concatenate(
-                            [_mask_weights, mask_weights_pad])
+        results = pool.map(bucketing_kernel, feed_data)
 
-            rois_on_imgs = dict()
-            labels_on_imgs = dict()
-            bbox_targets_on_imgs = dict()
-            bbox_weights_on_imgs = dict()
-            mask_targets_on_imgs = dict()
-            mask_weights_on_imgs = dict()
-            for s in config.RCNN_FEAT_STRIDE:
-                rois_on_imgs.update({'stride%s' % s: list()})
-                labels_on_imgs.update({'stride%s' % s: list()})
-                bbox_targets_on_imgs.update({'stride%s' % s: list()})
-                bbox_weights_on_imgs.update({'stride%s' % s: list()})
-                mask_targets_on_imgs.update({'stride%s' % s: list()})
-                mask_weights_on_imgs.update({'stride%s' % s: list()})
-
-            for im_i in range(num_imgs):
-                for s in config.RCNN_FEAT_STRIDE:
-                    im_rois_on_levels = data_on_imgs['img_%s' % im_i]['rois_on_levels']
-                    labels_on_levels = data_on_imgs['img_%s' % im_i]['labels_on_levels']
-                    bbox_targets_on_levels = data_on_imgs['img_%s' % im_i]['bbox_targets_on_levels']
-                    bbox_weights_on_levels = data_on_imgs['img_%s' % im_i]['bbox_weights_on_levels']
-                    mask_targets_on_levels = data_on_imgs['img_%s' % im_i]['mask_targets_on_levels']
-                    mask_weights_on_levels = data_on_imgs['img_%s' % im_i]['mask_weights_on_levels']
-
-                    _rois = im_rois_on_levels['stride%s' % s]
-                    batch_index = im_i * np.ones((_rois.shape[0], 1))
-                    rois_on_imgs['stride%s' % s].append(np.hstack((batch_index, _rois)))
-                    labels_on_imgs['stride%s' % s].append(labels_on_levels['stride%s' % s])
-                    bbox_targets_on_imgs['stride%s' % s].append(bbox_targets_on_levels['stride%s' % s])
-                    bbox_weights_on_imgs['stride%s' % s].append(bbox_weights_on_levels['stride%s' % s])
-                    mask_targets_on_imgs['stride%s' % s].append(mask_targets_on_levels['stride%s' % s])
-                    mask_weights_on_imgs['stride%s' % s].append(mask_weights_on_levels['stride%s' % s])
-
-            label = dict()
-            for s in config.RCNN_FEAT_STRIDE:
-                label.update({'label_stride%s' % s: np.reshape(np.concatenate(labels_on_imgs['stride%s' % s], axis=0),
-                                                               [num_imgs, -1])})
-                label.update({'bbox_target_stride%s' % s: np.reshape(
-                    np.concatenate(bbox_targets_on_imgs['stride%s' % s], axis=0), [num_imgs, -1])})
-                label.update({'bbox_weight_stride%s' % s: np.reshape(
-                    np.concatenate(bbox_weights_on_imgs['stride%s' % s], axis=0), [num_imgs, -1])})
-                label.update({'mask_target_stride%s' % s: np.reshape(
-                    np.concatenate(mask_targets_on_imgs['stride%s' % s], axis=0),
-                    [num_imgs, -1, config.NUM_CLASSES, 28, 28])})
-                label.update({'mask_weight_stride%s' % s: np.reshape(
-                    np.concatenate(mask_weights_on_imgs['stride%s' % s], axis=0),
-                    [num_imgs, -1, config.NUM_CLASSES, 1, 1])})
-
-            # Stack batch data, and update dict
-            data = dict()
-            data.update({'data': im_array})
-            for s in config.RCNN_FEAT_STRIDE:
-                rois_array = np.array(rois_on_imgs['stride%s' % s])
-                data.update({'rois_stride%s' % s: rois_array})
-
-            data_list.append(data)
-            label_list.append(label)
+        for res in results:
+            data_list.append(res[0])
+            label_list.append(res[1])
 
         all_data = dict()
         for key in data_list[0].keys():
@@ -513,33 +431,17 @@ class AnchorLoaderFPN(mx.io.DataIter):
             data_list[i_card]['data'] = data_tensor[
                                         i_card * config.TRAIN.BATCH_IMAGES:(1 + i_card) * config.TRAIN.BATCH_IMAGES]
 
-        for data, label in zip(data_list, label_list):
-            data_shape = {k: v.shape for k, v in data.items()}
-            del data_shape['im_info']
-            feat_shape_list = []
-            for s in range(len(self.feat_stride)):
-                _, feat_shape, _ = self.feat_sym[s].infer_shape(**data_shape)
-                feat_shape = [int(i) for i in feat_shape[0]]
-                feat_shape_list.append(feat_shape)
-            label['label'] = [0 for i in range(config.TRAIN.BATCH_IMAGES)]
-            label['bbox_target'] = [0 for i in range(config.TRAIN.BATCH_IMAGES)]
-            label['bbox_weight'] = [0 for i in range(config.TRAIN.BATCH_IMAGES)]
+        pool = mp.Pool(processes=len(data_list))
 
-            for im_i in range(config.TRAIN.BATCH_IMAGES):
-                im_info = data['im_info'][im_i]
-                gt_boxes = label['gt_boxes'][im_i][0]
-                label_dict = \
-                    assign_anchor_fpn(feat_shape_list, gt_boxes, im_info,
-                                  self.feat_stride,
-                                  self.anchor_scales,
-                                  self.anchor_ratios,
-                                  self.allowed_border)
-                label['label'][im_i] = label_dict['label']
-                label['bbox_target'][im_i] = label_dict['bbox_target']
-                label['bbox_weight'][im_i] = label_dict['bbox_weight']
-            label['label'] = np.vstack(label['label'])
-            label['bbox_target'] = np.vstack(label['bbox_target'])
-            label['bbox_weight'] = np.vstack(label['bbox_weight'])
+        feed_data = [(data, label, self.feat_sym, self.feat_stride,
+                      self.anchor_scales, self.anchor_ratios, self.allowed_border)
+                     for data, label in zip(data_list, label_list)]
+
+        results = pool.map(assign_kernel, feed_data)
+
+        label_list = []
+        for res in results:
+            label_list.append(res)
 
         all_data = dict()
         for key in self.data_name:
@@ -551,3 +453,136 @@ class AnchorLoaderFPN(mx.io.DataIter):
             all_label[key] = tensor_vstack([batch[key] for batch in label_list], pad=pad)
         self.data = [mx.nd.array(all_data[key]) for key in self.data_name]
         self.label = [mx.nd.array(all_label[key]) for key in self.label_name]
+
+
+def assign_kernel(data_pack):
+    data = data_pack[0]
+    label = data_pack[1]
+    feat_sym = data_pack[2]
+    feat_stride = data_pack[3]
+    anchor_scales = data_pack[4]
+    anchor_ratios = data_pack[5]
+    allowed_border = data_pack[6]
+
+    data_shape = {k: v.shape for k, v in data.items()}
+    del data_shape['im_info']
+    feat_shape_list = []
+    for s in range(len(feat_stride)):
+        _, feat_shape, _ = feat_sym[s].infer_shape(**data_shape)
+        feat_shape = [int(i) for i in feat_shape[0]]
+        feat_shape_list.append(feat_shape)
+    label['label'] = [0 for i in range(config.TRAIN.BATCH_IMAGES)]
+    label['bbox_target'] = [0 for i in range(config.TRAIN.BATCH_IMAGES)]
+    label['bbox_weight'] = [0 for i in range(config.TRAIN.BATCH_IMAGES)]
+
+    for im_i in range(config.TRAIN.BATCH_IMAGES):
+        im_info = data['im_info'][im_i]
+        gt_boxes = label['gt_boxes'][im_i][0]
+        label_dict = \
+            assign_anchor_fpn(feat_shape_list, gt_boxes, im_info,
+                              feat_stride,
+                              anchor_scales,
+                              anchor_ratios,
+                              allowed_border)
+        label['label'][im_i] = label_dict['label']
+        label['bbox_target'][im_i] = label_dict['bbox_target']
+        label['bbox_weight'][im_i] = label_dict['bbox_weight']
+    label['label'] = np.vstack(label['label'])
+    label['bbox_target'] = np.vstack(label['bbox_target'])
+    label['bbox_weight'] = np.vstack(label['bbox_weight'])
+    return label
+
+def bucketing_kernel(data_pack):
+    im_array = data_pack[0]
+    data_on_imgs = data_pack[1]
+    rois_num_on_levels = data_pack[2]
+    num_imgs = len(data_on_imgs)
+    for s in config.RCNN_FEAT_STRIDE:
+        bucket_size = rois_num_on_levels['stride%s' % s]
+        for im_i in range(num_imgs):
+            _rois = data_on_imgs['img_%s' % im_i]['rois_on_levels']['stride%s' % s]
+            _labels = data_on_imgs['img_%s' % im_i]['labels_on_levels']['stride%s' % s]
+            _bbox_targets = data_on_imgs['img_%s' % im_i]['bbox_targets_on_levels']['stride%s' % s]
+            _bbox_weights = data_on_imgs['img_%s' % im_i]['bbox_weights_on_levels']['stride%s' % s]
+            _mask_targets = data_on_imgs['img_%s' % im_i]['mask_targets_on_levels']['stride%s' % s]
+            _mask_weights = data_on_imgs['img_%s' % im_i]['mask_weights_on_levels']['stride%s' % s]
+            rois_num = _rois.shape[0]
+            if rois_num < bucket_size:
+                num_pad = bucket_size - rois_num
+
+                rois_pad = np.array([[12, 34, 56, 78]] * num_pad)
+                labels_pad = np.array([-1] * num_pad)
+                bbox_targets_pad = np.array([[1, 2, 3, 4] * config.NUM_CLASSES] * num_pad)
+                bbox_weights_pad = np.array([[0, 0, 0, 0] * config.NUM_CLASSES] * num_pad)
+                mask_targets_pad = np.zeros((num_pad, config.NUM_CLASSES, 28, 28),
+                                            dtype=np.int8)
+                mask_weights_pad = np.zeros((num_pad, config.NUM_CLASSES, 1, 1), dtype=np.int8)
+
+                data_on_imgs['img_%s' % im_i]['rois_on_levels']['stride%s' % s] = np.concatenate(
+                    [_rois, rois_pad])
+                data_on_imgs['img_%s' % im_i]['labels_on_levels']['stride%s' % s] = np.concatenate(
+                    [_labels, labels_pad])
+                data_on_imgs['img_%s' % im_i]['bbox_targets_on_levels']['stride%s' % s] = np.concatenate(
+                    [_bbox_targets, bbox_targets_pad])
+                data_on_imgs['img_%s' % im_i]['bbox_weights_on_levels']['stride%s' % s] = np.concatenate(
+                    [_bbox_weights, bbox_weights_pad])
+                data_on_imgs['img_%s' % im_i]['mask_targets_on_levels']['stride%s' % s] = np.concatenate(
+                    [_mask_targets, mask_targets_pad])
+                data_on_imgs['img_%s' % im_i]['mask_weights_on_levels']['stride%s' % s] = np.concatenate(
+                    [_mask_weights, mask_weights_pad])
+
+    rois_on_imgs = dict()
+    labels_on_imgs = dict()
+    bbox_targets_on_imgs = dict()
+    bbox_weights_on_imgs = dict()
+    mask_targets_on_imgs = dict()
+    mask_weights_on_imgs = dict()
+    for s in config.RCNN_FEAT_STRIDE:
+        rois_on_imgs.update({'stride%s' % s: list()})
+        labels_on_imgs.update({'stride%s' % s: list()})
+        bbox_targets_on_imgs.update({'stride%s' % s: list()})
+        bbox_weights_on_imgs.update({'stride%s' % s: list()})
+        mask_targets_on_imgs.update({'stride%s' % s: list()})
+        mask_weights_on_imgs.update({'stride%s' % s: list()})
+
+    for im_i in range(num_imgs):
+        for s in config.RCNN_FEAT_STRIDE:
+            im_rois_on_levels = data_on_imgs['img_%s' % im_i]['rois_on_levels']
+            labels_on_levels = data_on_imgs['img_%s' % im_i]['labels_on_levels']
+            bbox_targets_on_levels = data_on_imgs['img_%s' % im_i]['bbox_targets_on_levels']
+            bbox_weights_on_levels = data_on_imgs['img_%s' % im_i]['bbox_weights_on_levels']
+            mask_targets_on_levels = data_on_imgs['img_%s' % im_i]['mask_targets_on_levels']
+            mask_weights_on_levels = data_on_imgs['img_%s' % im_i]['mask_weights_on_levels']
+
+            _rois = im_rois_on_levels['stride%s' % s]
+            batch_index = im_i * np.ones((_rois.shape[0], 1))
+            rois_on_imgs['stride%s' % s].append(np.hstack((batch_index, _rois)))
+            labels_on_imgs['stride%s' % s].append(labels_on_levels['stride%s' % s])
+            bbox_targets_on_imgs['stride%s' % s].append(bbox_targets_on_levels['stride%s' % s])
+            bbox_weights_on_imgs['stride%s' % s].append(bbox_weights_on_levels['stride%s' % s])
+            mask_targets_on_imgs['stride%s' % s].append(mask_targets_on_levels['stride%s' % s])
+            mask_weights_on_imgs['stride%s' % s].append(mask_weights_on_levels['stride%s' % s])
+
+    label = dict()
+    for s in config.RCNN_FEAT_STRIDE:
+        label.update({'label_stride%s' % s: np.reshape(np.concatenate(labels_on_imgs['stride%s' % s], axis=0),
+                                                       [num_imgs, -1])})
+        label.update({'bbox_target_stride%s' % s: np.reshape(
+            np.concatenate(bbox_targets_on_imgs['stride%s' % s], axis=0), [num_imgs, -1])})
+        label.update({'bbox_weight_stride%s' % s: np.reshape(
+            np.concatenate(bbox_weights_on_imgs['stride%s' % s], axis=0), [num_imgs, -1])})
+        label.update({'mask_target_stride%s' % s: np.reshape(
+            np.concatenate(mask_targets_on_imgs['stride%s' % s], axis=0),
+            [num_imgs, -1, config.NUM_CLASSES, 28, 28])})
+        label.update({'mask_weight_stride%s' % s: np.reshape(
+            np.concatenate(mask_weights_on_imgs['stride%s' % s], axis=0),
+            [num_imgs, -1, config.NUM_CLASSES, 1, 1])})
+
+
+    # Stack batch data, and update dict
+    data = dict()
+    data.update({'data': im_array})
+    for s in config.RCNN_FEAT_STRIDE:
+        rois_array = np.array(rois_on_imgs['stride%s' % s])
+        data.update({'rois_stride%s' % s: rois_array})
+    return data, label
