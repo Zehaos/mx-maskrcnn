@@ -568,8 +568,7 @@ def get_resnet_fpn_maskrcnn(num_classes=config.NUM_CLASSES):
                                             name=name + '_reshape')
 
     mask_act_concat = mx.symbol.concat(*mask_deconv_act_list, dim=0)
-    mask_prob = mx.symbol.Activation(data=mask_act_concat, act_type='sigmoid', name="mask_prob")
-    mask_output = mx.symbol.Custom(mask_prob=mask_prob, mask_target=mask_target, mask_weight=mask_weight,
+    mask_output = mx.symbol.Custom(mask_act=mask_act_concat, mask_target=mask_target, mask_weight=mask_weight,
                                    label=label, name="mask_output", op_type='MaskOutput')
     mask_group = [mask_output]
     # group output
