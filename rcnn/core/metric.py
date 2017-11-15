@@ -98,7 +98,7 @@ class MaskLogLossMetric(mx.metric.EvalMetric):
         mask_target = np.concatenate(mask_target, axis=0)
         mask_weight = np.concatenate(mask_weight, axis=0)
 
-        real_inds   = np.where(label != -1)[0]
+        real_inds   = np.where(label > 0)[0]
         n_rois      = real_inds.shape[0]
         mask_prob   = mask_prob[real_inds, label[real_inds]]
         mask_target = mask_target[real_inds, label[real_inds]]
