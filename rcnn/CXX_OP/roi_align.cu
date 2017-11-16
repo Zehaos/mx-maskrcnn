@@ -67,8 +67,8 @@ __global__ void ROIAlignForwardKernel(const int count, const Dtype* bottom_data,
     // Define an empty pooling region to be zero
     Dtype maxval = is_empty ? 0 : -FLT_MAX;
     // If nothing is pooled, argmax = -1 causes nothing to be backprop'd
-    int maxidx_x = -1;
-    int maxidx_y = -1;
+    Dtype maxidx_x = -1;
+    Dtype maxidx_y = -1;
 
     bottom_data += (roi_batch_ind * channels + c) * height * width;
     Dtype h_stride = (hend - hstart)/3.0;
