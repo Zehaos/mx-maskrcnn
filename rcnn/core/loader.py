@@ -288,6 +288,14 @@ class MaskROIIter(mx.io.DataIter):
                             [_mask_targets, mask_targets_pad])
                         data_on_imgs['img_%s' % im_i]['mask_weights_on_levels']['stride%s' % s] = np.concatenate(
                             [_mask_weights, mask_weights_pad])
+                    elif rois_num > bucket_size:
+                        keep_idx = np.random.choice(rois_num, bucket_size)
+                        data_on_imgs['img_%s' % im_i]['rois_on_levels']['stride%s' % s] = _rois[keep_idx]
+                        data_on_imgs['img_%s' % im_i]['labels_on_levels']['stride%s' % s] = _labels[keep_idx]
+                        data_on_imgs['img_%s' % im_i]['bbox_targets_on_levels']['stride%s' % s] = _bbox_targets[keep_idx]
+                        data_on_imgs['img_%s' % im_i]['bbox_weights_on_levels']['stride%s' % s] = _bbox_weights[keep_idx]
+                        data_on_imgs['img_%s' % im_i]['mask_targets_on_levels']['stride%s' % s] = _mask_targets[keep_idx]
+                        data_on_imgs['img_%s' % im_i]['mask_weights_on_levels']['stride%s' % s] = _mask_weights[keep_idx]
 
             rois_on_imgs = dict()
             labels_on_imgs = dict()
