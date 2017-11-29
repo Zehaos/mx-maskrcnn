@@ -144,7 +144,6 @@ def pred_eval_mask(predictor, test_data, imdb, roidb, result_path, vis=False, th
     nms = py_nms_wrapper(config.TEST.NMS)
 
     num_images = imdb.num_images
-
     i = 0
     t = time.time()
     results_list = []
@@ -181,7 +180,6 @@ def pred_eval_mask(predictor, test_data, imdb, roidb, result_path, vis=False, th
 
         boxes_this_image = [[]] + [all_boxes[cls_ind][i] for cls_ind in range(1, imdb.num_classes)]
         masks_this_image = [[]] + [all_masks[cls_ind][i] for cls_ind in range(1, imdb.num_classes)]
-
         results_list.append({'image': roi_rec['image'],
                            'im_info': im_info,
                            'boxes': boxes_this_image,
@@ -190,6 +188,7 @@ def pred_eval_mask(predictor, test_data, imdb, roidb, result_path, vis=False, th
         t = time.time()
         print 'testing {}/{} data {:.4f}s net {:.4f}s post {:.4f}s'.format(i, imdb.num_images, t1, t2, t3)
         i += 1
+
     results_pack = {'all_boxes': all_boxes,
                     'all_masks': all_masks,
                     'results_list': results_list}

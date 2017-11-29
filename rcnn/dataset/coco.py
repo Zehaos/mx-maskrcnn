@@ -136,30 +136,58 @@ class coco(IMDB):
                    'flipped': False}
         return roi_rec
 
+    def append_flipped_images(self, roidb):
+        """
+        append flipped images to an roidb
+        flip boxes coordinates, images will be actually flipped when loading into network
+        :param roidb: [image_index]['boxes', 'gt_classes', 'gt_overlaps', 'flipped']
+        :return: roidb: [image_index]['boxes', 'gt_classes', 'gt_overlaps', 'flipped']
+        """
+        print 'append flipped images to roidb'
+        assert self.num_images == len(roidb)
+        for i in range(self.num_images):
+            roi_rec = roidb[i]
+            boxes = roi_rec['boxes'].copy()
+            #ins_seg = roi_rec['ins_seg'].copy()
+            #ins_seg = ins_seg[:, ::-1]
+            if boxes.shape[0] != 0:
+                oldx1 = boxes[:, 0].copy()
+                oldx2 = boxes[:, 2].copy()
+                boxes[:, 0] = roi_rec['width'] - oldx2 - 1
+                boxes[:, 2] = roi_rec['width'] - oldx1 - 1
+                assert (boxes[:, 2] >= boxes[:, 0]).all(),\
+                    'img_name %s, width %d\n' % (roi_rec['image'], roi_rec['width']) + \
+                    np.array_str(roi_rec['boxes'], precision=3, suppress_small=True)
+            entry = {'image': roi_rec['image'],
+                     'height': roi_rec['height'],
+                     'width': roi_rec['width'],
+                     'boxes': boxes,
+                     'gt_classes': roidb[i]['gt_classes'],
+                     'gt_overlaps': roidb[i]['gt_overlaps'],
+                     'max_classes': roidb[i]['max_classes'],
+                     'max_overlaps': roidb[i]['max_overlaps'],
+                     'ins_seg': roidb[i]['ins_seg'],
+                     'ins_id': roidb[i]['ins_id'],
+                     'flipped': True}
+            roidb.append(entry)
+
+        self.image_set_index *= 2
+        return roidb
+
     def evaluate_mask(self, results_pack):
 
         all_boxes = results_pack['all_boxes']
         all_masks = results_pack['all_masks']
-
+        all_iminfos = [result['im_info'] for result in results_pack['results_list']]
         res_folder = os.path.join(self.cache_path, 'results')
         if not os.path.exists(res_folder):
             os.makedirs(res_folder)
         res_file = os.path.join(res_folder, 'maskrcnn_%s_results.json' % self.image_set)
-        self._write_coco_results(all_boxes, all_masks, res_file)
+        self._write_coco_results(all_boxes, all_masks, all_iminfos, res_file)
         if 'test' not in self.image_set:
             self._do_python_eval(res_file, res_folder)
 
-    # def evaluate_detections(self, detections):
-    #     """ detections_val2014_results.json """
-    #     res_folder = os.path.join(self.cache_path, 'results')
-    #     if not os.path.exists(res_folder):
-    #         os.makedirs(res_folder)
-    #     res_file = os.path.join(res_folder, 'detections_%s_results.json' % self.image_set)
-    #     self._write_coco_results(detections, res_file)
-    #     if 'test' not in self.image_set:
-    #         self._do_python_eval(res_file, res_folder)
-
-    def _write_coco_results(self, detections, masks, res_file):
+    def _write_coco_results(self, detections, masks, im_infos, res_file):
         """ example results
         [{"image_id": 42,
           "category_id": 18,
@@ -172,26 +200,27 @@ class coco(IMDB):
                 continue
             print ('collecting %s results (%d/%d)' % (cls, cls_ind, self.num_classes - 1))
             coco_cat_id = self._class_to_coco_ind[cls]
-            results.extend(self._coco_results_one_category(detections[cls_ind], masks[cls_ind], coco_cat_id))
+            results.extend(self._coco_results_one_category(detections[cls_ind], masks[cls_ind], im_infos, coco_cat_id))
         print ('writing results json to %s' % res_file)
         with open(res_file, 'w') as f:
             json.dump(results, f, sort_keys=True, indent=4)
 
-    def _coco_results_one_category(self, boxes, all_masks, cat_id):
+    def _coco_results_one_category(self, boxes, all_masks, im_infos, cat_id):
         results = []
         for im_ind, index in enumerate(self.image_set_index):
             dets = boxes[im_ind].astype(np.float)
             masks = all_masks[im_ind]
+            im_scale = im_infos[im_ind][0][-1]
             if len(dets) == 0:
                 continue
             scores = dets[:, -1]
-            xs = dets[:, 0]
-            ys = dets[:, 1]
-            ws = dets[:, 2] - xs + 1
-            hs = dets[:, 3] - ys + 1
+            x1 = dets[:, 0]/im_scale
+            y1 = dets[:, 1]/im_scale
+            x2 = dets[:, 2]/im_scale
+            y2 = dets[:, 3]/im_scale
             result = [{'image_id': index,
                        'category_id': cat_id,
-                       'segmentation': self._encode_mask([[xs[k], ys[k], ws[k], hs[k]]], masks[k], index),
+                       'segmentation': self._encode_mask([x1[k], y1[k], x2[k], y2[k]], masks[k], index),
                        'score': scores[k]} for k in xrange(dets.shape[0])]
             results.extend(result)
         return results
@@ -249,48 +278,12 @@ class coco(IMDB):
         height = im_ann['height']
 
         mask_img = np.zeros((height, width), dtype=np.uint8, order='F')  # col major
+        bbox = map(int, bbox)
 
-        mask = cv2.resize(mask, (bbox[2] - bbox[0], (bbox[3] - bbox[1])), interpolation=cv2.INTER_LINEAR)
+        mask = cv2.resize(mask, (bbox[2] - bbox[0] + 1, bbox[3] - bbox[1] + 1), interpolation=cv2.INTER_LINEAR)
         mask[mask > 0.5] = 1
         mask[mask <= 0.5] = 0
-        mask_img[bbox[1]: bbox[3], bbox[0]: bbox[2]] = mask
+        mask_img[bbox[1]: bbox[3]+1, bbox[0]: bbox[2]+1] = mask
 
         return coco_mask_encode(mask_img)
 
-    def append_flipped_images(self, roidb):
-        """
-        append flipped images to an roidb
-        flip boxes coordinates, images will be actually flipped when loading into network
-        :param roidb: [image_index]['boxes', 'gt_classes', 'gt_overlaps', 'flipped']
-        :return: roidb: [image_index]['boxes', 'gt_classes', 'gt_overlaps', 'flipped']
-        """
-        print 'append flipped images to roidb'
-        assert self.num_images == len(roidb)
-        for i in range(self.num_images):
-            roi_rec = roidb[i]
-            boxes = roi_rec['boxes'].copy()
-            #ins_seg = roi_rec['ins_seg'].copy()
-            #ins_seg = ins_seg[:, ::-1]
-            if boxes.shape[0] != 0:
-                oldx1 = boxes[:, 0].copy()
-                oldx2 = boxes[:, 2].copy()
-                boxes[:, 0] = roi_rec['width'] - oldx2 - 1
-                boxes[:, 2] = roi_rec['width'] - oldx1 - 1
-                assert (boxes[:, 2] >= boxes[:, 0]).all(),\
-                    'img_name %s, width %d\n' % (roi_rec['image'], roi_rec['width']) + \
-                    np.array_str(roi_rec['boxes'], precision=3, suppress_small=True)
-            entry = {'image': roi_rec['image'],
-                     'height': roi_rec['height'],
-                     'width': roi_rec['width'],
-                     'boxes': boxes,
-                     'gt_classes': roidb[i]['gt_classes'],
-                     'gt_overlaps': roidb[i]['gt_overlaps'],
-                     'max_classes': roidb[i]['max_classes'],
-                     'max_overlaps': roidb[i]['max_overlaps'],
-                     'ins_seg': roidb[i]['ins_seg'],
-                     'ins_id': roidb[i]['ins_id'],
-                     'flipped': True}
-            roidb.append(entry)
-
-        self.image_set_index *= 2
-        return roidb
