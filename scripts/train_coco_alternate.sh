@@ -5,8 +5,8 @@ export PYTHONPATH=incubator-mxnet/python/
 
 TRAIN_DIR=model/res50-fpn/coco/alternate/
 DATASET=coco
-SET=minival2014
-TEST_SET=val
+SET=train2014+valminusminival2014
+TEST_SET=minival2014
 mkdir -p ${TRAIN_DIR}
 
 # Train
@@ -18,5 +18,5 @@ python train_alternate_mask_fpn.py \
     --pretrained model/resnet-50 \
     --prefix ${TRAIN_DIR} \
     --pretrained_epoch 0 \
-    --gpu 0 |& tee -a ${TRAIN_DIR}/train.log
+    --gpu 0,1,2,3 |& tee -a ${TRAIN_DIR}/train.log
 
