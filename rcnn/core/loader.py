@@ -245,6 +245,14 @@ class MaskROIIter(mx.io.DataIter):
                 ex = num_imgs - rois_num_on_levels['stride%s' % s] % num_imgs
                 rois_num_on_levels['stride%s' % s] += ex
 
+        if config.SUPRESS_OOM:
+            ex_rois_num = sum(rois_num_on_levels.values()) - config.BATCH_ROIS_THRESHOLD
+            if ex_rois_num > 0:
+                print "Batch rois threshold {}. Bucketing rois num {}".format(config.BATCH_ROIS_THRESHOLD,
+                                                                              sum(rois_num_on_levels.values()))
+                assert 'stride4' in rois_num_on_levels.keys()
+                rois_num_on_levels['stride4'] -= ex_rois_num
+
         for im_array, data_on_imgs in zip(im_array_list, levels_data_list):
             num_imgs = len(data_on_imgs)
             for s in config.RCNN_FEAT_STRIDE:

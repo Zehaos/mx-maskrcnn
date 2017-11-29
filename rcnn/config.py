@@ -7,6 +7,9 @@ config = edict()
 config.PIXEL_MEANS = np.array([103.939, 116.779, 123.68])
 config.ROIALIGN = True
 
+config.SUPRESS_OOM = True
+config.BATCH_ROIS_THRESHOLD = 400
+
 config.RPN_FEAT_STRIDE = [64, 32, 16, 8, 4]
 config.RCNN_FEAT_STRIDE = [32, 16, 8, 4]
 
