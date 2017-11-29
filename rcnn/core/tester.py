@@ -291,11 +291,12 @@ def vis_all_detection(im_array, detections, class_names, scale):
 def draw_detection_mask(im_array, boxes_this_image, masks_this_image, scale, filename):
     import cv2
     import random
-    class_names = ('__background__', 'person', 'rider', 'car', 'truck', 'bus', 'train', 'mcycle', 'bicycle')
+    class_names = config.CLASS_NAME
     color_white = (255, 255, 255)
     im = image.transform_inverse(im_array.asnumpy(), config.PIXEL_MEANS)
     # change to bgr
     im = cv2.cvtColor(im, cv2.cv.CV_RGB2BGR)
+    im = cv2.resize(im,  (int(im.shape[1]/scale), int(im.shape[0]/scale)))
     for j, name in enumerate(class_names):
         if name == '__background__':
             continue
@@ -303,7 +304,7 @@ def draw_detection_mask(im_array, boxes_this_image, masks_this_image, scale, fil
         dets = boxes_this_image[j]
         masks = masks_this_image[j]
         for i in range(len(dets)):
-            bbox = dets[i, :4] * scale
+            bbox = dets[i, :4] / scale
             score = dets[i, -1]
             bbox = map(int, bbox)
             cv2.rectangle(im, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color=color, thickness=2)
@@ -332,7 +333,7 @@ def draw_detection(im_array, boxes_this_image, scale, filename):
     """
     import cv2
     import random
-    class_names = ('__background__', 'person', 'rider', 'car', 'truck', 'bus', 'train', 'mcycle', 'bicycle')
+    class_names = config.CLASS_NAME
     color_white = (255, 255, 255)
     im = image.transform_inverse(im_array.asnumpy(), config.PIXEL_MEANS)
     # change to bgr
