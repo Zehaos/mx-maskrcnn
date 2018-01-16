@@ -495,6 +495,16 @@ def get_resnet_fpn_maskrcnn(num_classes=config.NUM_CLASSES):
     mask_deconv_2_weight = mx.symbol.Variable('mask_deconv_2_weight')
     mask_deconv_2_bias = mx.symbol.Variable('mask_deconv_2_bias')
 
+    if config.FC_AUG_MASK:
+        fc_conv_4_weight = mx.symbol.Variable('fc_conv_4_weight')
+        fc_conv_4_bias = mx.symbol.Variable('fc_conv_4_bias')
+        fc_conv_5_weight = mx.symbol.Variable('fc_conv_5_weight')
+        fc_conv_5_bias = mx.symbol.Variable('fc_conv_5_bias')
+        fc_global_weight = mx.symbol.Variable('fc_global_weight')
+        fc_global_bias = mx.symbol.Variable('fc_global_bias')
+        fc_conv_6_weight = mx.symbol.Variable('fc_conv_6_weight')
+        fc_conv_6_bias = mx.symbol.Variable('fc_conv_6_bias')
+
     rcnn_cls_score_list = []
     rcnn_bbox_pred_list = []
     mask_deconv_act_list = []
@@ -548,7 +558,26 @@ def get_resnet_fpn_maskrcnn(num_classes=config.NUM_CLASSES):
                                                 workspace=512, weight=mask_deconv_1_weight, name="mask_deconv1")
         mask_deconv_2 = mx.symbol.Convolution(data=mask_deconv_1, kernel=(1, 1), num_filter=num_classes,
                                               workspace=512, weight=mask_deconv_2_weight, bias=mask_deconv_2_bias, name="mask_deconv2")
-        mask_deconv_act_list.append(mask_deconv_2)
+        if config.FC_AUG_MASK:
+            fc_conv_4 = mx.symbol.Convolution(
+                data=mask_relu_3, kernel=(3, 3), pad=(1, 1), num_filter=256, workspace=512, weight=fc_conv_4_weight,
+                bias=fc_conv_4_bias,
+                name="fc_conv_4")
+            fc_relu_4 = mx.symbol.Activation(data=fc_conv_4, act_type="relu", name="fc_relu_4")
+            fc_conv_5 = mx.symbol.Convolution(
+                data=fc_relu_4, kernel=(3, 3), pad=(1, 1), num_filter=128, workspace=512, weight=fc_conv_5_weight,
+                bias=fc_conv_5_bias,
+                name="fc_conv_5")
+            fc_relu_5 = mx.symbol.Activation(data=fc_conv_5, act_type="relu", name="fc_relu_5")
+            fc_global = mx.symbol.FullyConnected(data=fc_relu_5, num_hidden=28*28, weight=fc_global_weight, bias=fc_global_bias, name="fc_global")
+            fc_global = mx.symbol.reshape(fc_global, shape=(-1, 1, 28, 28))
+            concated_feat = mx.symbol.concat([mask_deconv_2, fc_global], dim=1)
+            mask_feat = mx.symbol.Convolution(data=concated_feat, kernel=(1, 1), num_filter=num_classes,
+                                                  workspace=512, weight=fc_conv_6_weight, bias=fc_conv_6_bias,
+                                                  name="fc_conv_6")
+            mask_deconv_act_list.append(mask_feat)
+        else:
+            mask_deconv_act_list.append(mask_deconv_2)
 
     # concat output of each level
     cls_score_concat = mx.symbol.concat(*rcnn_cls_score_list, dim=0)  # [num_rois_4level, num_class]
